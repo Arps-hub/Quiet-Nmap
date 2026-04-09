@@ -245,5 +245,154 @@ def ping(target: str, timeout: float) -> None:
         console.print(f"  [red]{target} is DOWN or unreachable[/red]")
 
 
+@main.command()
+@click.option("-i", "--interface", default=None, help="Network interface to sniff on")
+@click.option("-d", "--duration", type=float, default=None, help="Duration in seconds (default: until Ctrl+C)")
+@click.option("-f", "--filter", "bpf_filter", default=None, help="BPF filter (e.g., 'tcp port 80')")
+@click.option("--no-dashboard", is_flag=True, default=False, help="Disable live dashboard, print text instead")
+@click.option("-oJ", "--json-output", type=click.Path(), default=None, help="Save captured traffic as JSON")
+@click.option("-v", "--verbose", count=True, help="Increase verbosity")
+def monitor(
+    interface: str | None,
+    duration: float | None,
+    bpf_filter: str | None,
+    no_dashboard: bool,
+    json_output: str | None,
+    verbose: int,
+) -> None:
+    """Monitor network traffic in real time.
+
+    Captures packets on the network and shows who is talking to whom,
+    what protocols they're using, DNS lookups, HTTP requests, and more.
+
+    Requires root/admin privileges.
+
+    \b
+    Examples:
+        quietnmap monitor
+        quietnmap monitor -i eth0 -d 60
+        quietnmap monitor -f "tcp port 80 or udp port 53"
+        quietnmap monitor --no-dashboard -oJ traffic.json
+    """
+    import json
+    from quietnmap.monitor.sniffer import PacketSniffer
+    from quietnmap.monitor.dashboard import TrafficDashboard
+    from quietnmap.monitor.analyzer import analyze_traffic
+
+    # Configure logging
+    log_level = logging.WARNING
+    if verbose == 1:
+        log_level = logging.INFO
+    elif verbose >= 2:
+        log_level = logging.DEBUG
+    logging.basicConfig(
+        level=log_level,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        datefmt="%H:%M:%S",
+    )
+
+    print_banner()
+    console.print("  [bold cyan]Traffic Monitor[/bold cyan]")
+    if interface:
+        console.print(f"  Interface: {interface}")
+    if bpf_filter:
+        console.print(f"  Filter: {bpf_filter}")
+    if duration:
+        console.print(f"  Duration: {duration}s")
+    else:
+        console.print("  Duration: until Ctrl+C")
+    console.print()
+
+    sniffer = PacketSniffer(
+        interface=interface,
+        bpf_filter=bpf_filter,
+    )
+
+    dashboard: TrafficDashboard | None = None
+    if not no_dashboard:
+        dashboard = TrafficDashboard(local_ip=sniffer.local_ip)
+
+        # Update counter to throttle dashboard refreshes
+        _update_count = 0
+
+        def _on_update(snapshot):
+            nonlocal _update_count
+            _update_count += 1
+            if _update_count % 10 == 0:  # Update every 10 packets
+                dashboard.update(snapshot)
+
+        sniffer.on_update(_on_update)
+
+    async def _run() -> None:
+        if dashboard:
+            dashboard.start()
+        try:
+            await sniffer.start(duration=duration)
+        finally:
+            if dashboard:
+                dashboard.stop()
+
+    try:
+        asyncio.run(_run())
+    except KeyboardInterrupt:
+        sniffer.stop()
+        if dashboard:
+            dashboard.stop()
+        console.print("\n[yellow]Monitoring stopped[/yellow]")
+
+    # Print summary
+    snapshot = sniffer.snapshot
+    console.print(f"\n  [bold]Capture Summary[/bold]")
+    console.print(f"  Total packets: {snapshot.total_packets}")
+    console.print(f"  Total data: {snapshot.total_bytes:,} bytes")
+    console.print(f"  Duration: {snapshot.duration:.1f}s")
+    console.print(f"  Connections: {len(snapshot.connections)}")
+    console.print(f"  DNS queries: {len(snapshot.dns_log)}")
+    console.print(f"  HTTP requests: {len(snapshot.http_log)}")
+
+    # Device summary
+    devices = analyze_traffic(snapshot, sniffer.local_ip)
+    if devices:
+        console.print(f"\n  [bold]Top Devices:[/bold]")
+        for dev in devices[:10]:
+            activities = ", ".join(dev.activities[:3]) if dev.activities else "idle"
+            label = " (you)" if dev.ip == sniffer.local_ip else ""
+            console.print(f"    {dev.ip}{label} — {dev.total_packets} pkts — {activities}")
+
+    # Save JSON if requested
+    if json_output:
+        data = {
+            "capture_time": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "duration_seconds": round(snapshot.duration, 2),
+            "total_packets": snapshot.total_packets,
+            "total_bytes": snapshot.total_bytes,
+            "protocols": dict(snapshot.protocol_counts),
+            "dns_queries": [
+                {"time": t, "source": src, "query": q}
+                for t, src, q in snapshot.dns_log
+            ],
+            "http_requests": [
+                {"time": t, "source": src, "method": m, "host": h}
+                for t, src, m, h in snapshot.http_log
+            ],
+            "devices": [
+                {
+                    "ip": d.ip,
+                    "bytes": d.total_bytes,
+                    "packets": d.total_packets,
+                    "activities": d.activities,
+                    "dns_queries": d.dns_queries[:20],
+                    "http_sites": d.http_sites[:20],
+                }
+                for d in devices
+            ],
+        }
+        from pathlib import Path
+        out_path = Path(json_output)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(json.dumps(data, indent=2, default=str), encoding="utf-8")
+        console.print(f"\n  [dim]Traffic data saved to: {out_path}[/dim]")
+
+
 if __name__ == "__main__":
     main()

@@ -13,6 +13,8 @@ A modern, async Python network scanner — an nmap-inspired alternative built wi
 - **Scan Profiles** — `quiet`, `normal`, `aggressive`, `paranoid`, `quick` presets
 - **Rich CLI** — Live dashboard with progress tracking
 - **Multiple Output Formats** — Console, JSON, HTML report
+- **Traffic Monitor** — Real-time packet sniffing with live dashboard showing who's talking to whom
+- **Protocol Analysis** — Identifies DNS lookups, HTTP requests, and 40+ protocol activities
 - **Plugin System** — Extensible via entry points or local plugin directory
 - **No Root Fallback** — Falls back to TCP connect scan when raw sockets aren't available
 
@@ -47,6 +49,15 @@ quietnmap ping 192.168.1.1
 
 # List scan profiles
 quietnmap profiles
+
+# Monitor network traffic (requires admin/root)
+quietnmap monitor
+
+# Monitor specific interface with filter
+quietnmap monitor -i eth0 -f "tcp port 80 or udp port 53"
+
+# Monitor for 60 seconds and save to JSON
+quietnmap monitor -d 60 -oJ traffic.json
 ```
 
 ## Scan Types
@@ -94,6 +105,10 @@ quiet-nmap/
 │   │   ├── console.py         # Rich console output & live dashboard
 │   │   ├── json_out.py        # JSON export
 │   │   └── html_report.py     # Self-contained HTML report
+│   ├── monitor/
+│   │   ├── sniffer.py         # Packet capture & connection tracking
+│   │   ├── analyzer.py        # Protocol analysis & device activity
+│   │   └── dashboard.py       # Rich live traffic dashboard
 │   └── plugins/
 │       └── base.py            # Plugin system (base class & loader)
 ├── tests/
@@ -104,6 +119,36 @@ quiet-nmap/
 ├── pyproject.toml
 └── .gitignore
 ```
+
+## Traffic Monitor
+
+The `monitor` command captures live network traffic and shows what devices on your network are doing:
+
+- **Device tracking** — See every IP, their traffic volume, and what they're up to
+- **DNS spy** — Watch domain lookups in real time (who's visiting what)
+- **HTTP logger** — Capture HTTP requests (method + host)
+- **Protocol breakdown** — TCP vs UDP vs ICMP distribution
+- **Connection tracker** — Active connections with source, destination, and data volume
+- **Live dashboard** — Full-screen Rich TUI that updates in real time
+
+```bash
+# Start monitoring (Ctrl+C to stop)
+quietnmap monitor
+
+# Monitor a specific interface
+quietnmap monitor -i Wi-Fi
+
+# Only capture DNS and HTTP traffic
+quietnmap monitor -f "udp port 53 or tcp port 80"
+
+# Run for 2 minutes and export results
+quietnmap monitor -d 120 -oJ captured.json
+
+# Text mode (no live dashboard)
+quietnmap monitor --no-dashboard -v
+```
+
+> Requires **admin/root** privileges for raw packet capture.
 
 ## Usage as a Library
 
