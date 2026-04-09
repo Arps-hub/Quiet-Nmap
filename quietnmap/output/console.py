@@ -63,14 +63,20 @@ def print_scan_start(targets: list[str], ports: list[int], scan_type: str) -> No
     console.print(Panel(info, title="[bold]Scan Configuration", border_style="blue"))
 
 
-def print_host_result(host: HostResult, show_closed: bool = False) -> None:
+def print_host_result(
+    host: HostResult, show_closed: bool = False,
+    aliases: dict[str, str] | None = None, local_ip: str | None = None,
+) -> None:
     """Print scan results for a single host."""
+    from quietnmap.aliases import resolve_ip
+    display_ip = resolve_ip(host.ip, aliases=aliases, local_ip=local_ip)
+
     if not host.is_up:
-        console.print(f"  [dim]{host.ip} — Host down[/dim]")
+        console.print(f"  [dim]{display_ip} — Host down[/dim]")
         return
 
     # Host header
-    header = f"[bold white]{host.ip}[/bold white]"
+    header = f"[bold white]{display_ip}[/bold white]"
     if host.hostname:
         header += f" ({host.hostname})"
     if host.best_os_guess:

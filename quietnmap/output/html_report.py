@@ -18,12 +18,21 @@ STATE_COLORS = {
 }
 
 
-def generate_html(session: ScanSession) -> str:
+def generate_html(session: ScanSession, aliases: dict[str, str] | None = None,
+                   local_ip: str | None = None) -> str:
     """Generate a self-contained HTML report."""
     hosts_html = ""
     for host in session.hosts:
         if not host.is_up:
             continue
+
+        # Resolve display name
+        display_ip = host.ip
+        tag = ""
+        if aliases and host.ip in aliases:
+            tag = aliases[host.ip]
+        elif host.ip == local_ip:
+            tag = "this pc"
 
         ports_rows = ""
         for p in host.ports:
@@ -45,10 +54,11 @@ def generate_html(session: ScanSession) -> str:
         if host.best_os_guess:
             os_info = f'<span class="os-guess">OS: {html.escape(str(host.best_os_guess))}</span>'
 
+        tag_html = f' <span class="hostname">({html.escape(tag)})</span>' if tag else ""
         hosts_html += f"""
         <div class="host">
             <div class="host-header">
-                <h2>{html.escape(host.ip)}</h2>
+                <h2>{html.escape(host.ip)}{tag_html}</h2>
                 {f'<span class="hostname">{html.escape(host.hostname)}</span>' if host.hostname else ''}
                 {os_info}
                 <span class="open-count">{len(host.open_ports)} open port(s)</span>
@@ -157,9 +167,12 @@ def generate_html(session: ScanSession) -> str:
 </html>"""
 
 
-def save_html(session: ScanSession, path: str | Path) -> Path:
+def save_html(session: ScanSession, path: str | Path,
+              aliases: dict[str, str] | None = None,
+              local_ip: str | None = None) -> Path:
     """Save scan results as HTML report."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(generate_html(session), encoding="utf-8")
+    path.write_text(generate_html(session, aliases=aliases, local_ip=local_ip),
+                    encoding="utf-8")
     return path

@@ -50,6 +50,11 @@ quietnmap ping 192.168.1.1
 # List scan profiles
 quietnmap profiles
 
+# Name devices on your network
+quietnmap alias add 192.168.1.1 Router
+quietnmap alias add 192.168.1.50 "Dad's Laptop"
+quietnmap alias list
+
 # Monitor network traffic (requires admin/root)
 quietnmap monitor
 
@@ -92,6 +97,7 @@ quiet-nmap/
 │   ├── cli.py                 # Click CLI interface
 │   ├── models.py              # Data models (ScanConfig, HostResult, etc.)
 │   ├── profiles.py            # Scan profile presets
+│   ├── aliases.py             # Device alias manager (IP → friendly name)
 │   ├── core/
 │   │   ├── scanner.py         # Main scan engine (orchestrator)
 │   │   ├── tcp.py             # TCP scan techniques (SYN, FIN, XMAS, etc.)
@@ -119,6 +125,28 @@ quiet-nmap/
 ├── pyproject.toml
 └── .gitignore
 ```
+
+## Device Aliases
+
+Give friendly names to IPs so you can tell who's who on the network. Your machine is auto-tagged as `(this pc)`.
+
+```bash
+# Add aliases
+quietnmap alias add 192.168.1.1 Router
+quietnmap alias add 192.168.1.20 "Mom's Phone"
+quietnmap alias add 192.168.1.30 "Smart TV"
+
+# List all aliases
+quietnmap alias list
+
+# Remove one
+quietnmap alias remove 192.168.1.30
+
+# Clear all
+quietnmap alias clear
+```
+
+Aliases show up everywhere — scan results, traffic monitor, HTML reports, and JSON exports. Stored in `~/.quietnmap/aliases.json`.
 
 ## Traffic Monitor
 

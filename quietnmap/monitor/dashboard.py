@@ -37,7 +37,19 @@ def _format_time(ts: float) -> str:
     return time.strftime("%H:%M:%S", time.localtime(ts))
 
 
-def build_dashboard(snapshot: TrafficSnapshot, local_ip: str | None = None) -> Layout:
+def _resolve(ip: str, aliases: dict[str, str] | None, local_ip: str | None) -> str:
+    """Resolve IP to display name for dashboard."""
+    if aliases and ip in aliases:
+        return f"{aliases[ip]}"
+    if ip == local_ip:
+        return "this pc"
+    return ip
+
+
+def build_dashboard(
+    snapshot: TrafficSnapshot, local_ip: str | None = None,
+    aliases: dict[str, str] | None = None,
+) -> Layout:
     """Build the full dashboard layout from current traffic snapshot."""
     layout = Layout()
     layout.split_column(
@@ -72,19 +84,20 @@ def build_dashboard(snapshot: TrafficSnapshot, local_ip: str | None = None) -> L
     # Device activity table
     devices = analyze_traffic(snapshot, local_ip)
     dev_table = Table(title="Devices & Activity", expand=True, show_edge=False)
-    dev_table.add_column("IP", style="bold", width=16)
+    dev_table.add_column("Device", style="bold", width=20)
+    dev_table.add_column("IP", style="dim", width=16)
     dev_table.add_column("Traffic", justify="right", width=10)
     dev_table.add_column("Pkts", justify="right", width=8)
-    dev_table.add_column("Protocols", width=12)
     dev_table.add_column("Activity", style="cyan")
 
     for dev in devices[:15]:
         activity = ", ".join(dev.activities[:3]) if dev.activities else "—"
-        protos = ", ".join(sorted(dev.protocols))
-        style = "bold green" if dev.ip == local_ip else ""
+        display_name = _resolve(dev.ip, aliases, local_ip)
+        is_local = dev.ip == local_ip
+        style = "bold green" if is_local else ""
         dev_table.add_row(
-            dev.ip, _format_bytes(dev.total_bytes),
-            str(dev.total_packets), protos, activity,
+            display_name, dev.ip, _format_bytes(dev.total_bytes),
+            str(dev.total_packets), activity,
             style=style,
         )
     layout["devices"].update(Panel(dev_table, border_style="green"))
@@ -105,9 +118,11 @@ def build_dashboard(snapshot: TrafficSnapshot, local_ip: str | None = None) -> L
         info = conn.info or ""
         if conn.dns_queries:
             info = f"DNS: {conn.dns_queries[-1]}"
+        src_name = _resolve(conn.key.src_ip, aliases, local_ip)
+        dst_name = _resolve(conn.key.dst_ip, aliases, local_ip)
         conn_table.add_row(
-            f"{conn.key.src_ip}:{conn.key.src_port}",
-            f"{conn.key.dst_ip}:{conn.key.dst_port}",
+            f"{src_name}:{conn.key.src_port}",
+            f"{dst_name}:{conn.key.dst_port}",
             conn.key.protocol,
             conn.bytes_display,
             info[:40],
@@ -132,7 +147,7 @@ def build_dashboard(snapshot: TrafficSnapshot, local_ip: str | None = None) -> L
     dns_table.add_column("Query", style="cyan")
 
     for ts, src, query in get_recent_dns(snapshot, limit=8):
-        dns_table.add_row(_format_time(ts), src, query)
+        dns_table.add_row(_format_time(ts), _resolve(src, aliases, local_ip), query)
     layout["dns"].update(Panel(dns_table, border_style="magenta"))
 
     # HTTP log
@@ -143,7 +158,7 @@ def build_dashboard(snapshot: TrafficSnapshot, local_ip: str | None = None) -> L
     http_table.add_column("Host", style="green")
 
     for ts, src, method, host in get_recent_http(snapshot, limit=8):
-        http_table.add_row(_format_time(ts), src, method, host)
+        http_table.add_row(_format_time(ts), _resolve(src, aliases, local_ip), method, host)
     layout["http"].update(Panel(http_table, border_style="green"))
 
     # Footer
@@ -162,8 +177,10 @@ def build_dashboard(snapshot: TrafficSnapshot, local_ip: str | None = None) -> L
 class TrafficDashboard:
     """Manages the Rich Live display for traffic monitoring."""
 
-    def __init__(self, local_ip: str | None = None):
+    def __init__(self, local_ip: str | None = None,
+                 aliases: dict[str, str] | None = None):
         self.local_ip = local_ip
+        self.aliases = aliases
         self._live: Live | None = None
 
     def start(self) -> Live:
@@ -179,7 +196,7 @@ class TrafficDashboard:
     def update(self, snapshot: TrafficSnapshot) -> None:
         """Update the dashboard with new data."""
         if self._live:
-            layout = build_dashboard(snapshot, self.local_ip)
+            layout = build_dashboard(snapshot, self.local_ip, self.aliases)
             self._live.update(layout)
 
     def stop(self) -> None:

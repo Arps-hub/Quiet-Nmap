@@ -172,12 +172,18 @@ def scan(
 
     print_scan_start(resolved_targets, resolved_ports, config.scan_type.value)
 
+    # Load aliases for display
+    from quietnmap.aliases import load_aliases, get_local_ip
+    _aliases = load_aliases()
+    _local_ip = get_local_ip()
+
     # Run the scan
     scanner = Scanner(config)
 
     async def _run() -> None:
         async for host in scanner.run_stream():
-            print_host_result(host, show_closed=show_closed)
+            print_host_result(host, show_closed=show_closed,
+                              aliases=_aliases, local_ip=_local_ip)
 
     try:
         asyncio.run(_run())
@@ -198,7 +204,7 @@ def scan(
 
     if html_output:
         from quietnmap.output.html_report import save_html
-        path = save_html(session, html_output)
+        path = save_html(session, html_output, aliases=_aliases, local_ip=_local_ip)
         console.print(f"  [dim]HTML report saved to: {path}[/dim]")
 
 
@@ -308,9 +314,14 @@ def monitor(
         bpf_filter=bpf_filter,
     )
 
+    # Load aliases for display
+    from quietnmap.aliases import load_aliases, get_local_ip as _get_local_ip
+    _mon_aliases = load_aliases()
+    _mon_local_ip = sniffer.local_ip or _get_local_ip()
+
     dashboard: TrafficDashboard | None = None
     if not no_dashboard:
-        dashboard = TrafficDashboard(local_ip=sniffer.local_ip)
+        dashboard = TrafficDashboard(local_ip=_mon_local_ip, aliases=_mon_aliases)
 
         # Update counter to throttle dashboard refreshes
         _update_count = 0
@@ -351,13 +362,14 @@ def monitor(
     console.print(f"  HTTP requests: {len(snapshot.http_log)}")
 
     # Device summary
-    devices = analyze_traffic(snapshot, sniffer.local_ip)
+    from quietnmap.aliases import resolve_ip
+    devices = analyze_traffic(snapshot, _mon_local_ip)
     if devices:
         console.print(f"\n  [bold]Top Devices:[/bold]")
         for dev in devices[:10]:
             activities = ", ".join(dev.activities[:3]) if dev.activities else "idle"
-            label = " (you)" if dev.ip == sniffer.local_ip else ""
-            console.print(f"    {dev.ip}{label} — {dev.total_packets} pkts — {activities}")
+            display = resolve_ip(dev.ip, aliases=_mon_aliases, local_ip=_mon_local_ip)
+            console.print(f"    {display} — {dev.total_packets} pkts — {activities}")
 
     # Save JSON if requested
     if json_output:
@@ -392,6 +404,80 @@ def monitor(
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text(json.dumps(data, indent=2, default=str), encoding="utf-8")
         console.print(f"\n  [dim]Traffic data saved to: {out_path}[/dim]")
+
+
+@main.group()
+def alias() -> None:
+    """Manage device aliases — give friendly names to IPs on your network.
+
+    \b
+    Examples:
+        quietnmap alias add 192.168.1.1 Router
+        quietnmap alias add 192.168.1.50 "Dad's Laptop"
+        quietnmap alias list
+        quietnmap alias remove 192.168.1.1
+    """
+
+
+@alias.command("add")
+@click.argument("ip")
+@click.argument("name", nargs=-1, required=True)
+def alias_add(ip: str, name: tuple[str, ...]) -> None:
+    """Give a friendly name to an IP address."""
+    from quietnmap.aliases import add_alias
+    friendly_name = " ".join(name)
+    add_alias(ip, friendly_name)
+    console.print(f"  [green]Alias set:[/green] {ip} -> [bold]{friendly_name}[/bold]")
+
+
+@alias.command("remove")
+@click.argument("ip")
+def alias_remove(ip: str) -> None:
+    """Remove an alias for an IP address."""
+    from quietnmap.aliases import remove_alias
+    if remove_alias(ip):
+        console.print(f"  [yellow]Alias removed:[/yellow] {ip}")
+    else:
+        console.print(f"  [red]No alias found for {ip}[/red]")
+
+
+@alias.command("list")
+def alias_list() -> None:
+    """Show all saved aliases."""
+    from rich.table import Table
+    from quietnmap.aliases import list_aliases, get_local_ip
+
+    aliases = list_aliases()
+    local_ip = get_local_ip()
+
+    print_banner()
+
+    if not aliases:
+        console.print("  [dim]No aliases set. Use 'quietnmap alias add <ip> <name>' to add one.[/dim]")
+        console.print(f"\n  [dim]Your IP: {local_ip} (auto-tagged as 'this pc')[/dim]")
+        return
+
+    table = Table(title="Device Aliases", show_header=True, header_style="bold cyan")
+    table.add_column("IP Address", style="bold")
+    table.add_column("Name", style="green")
+    table.add_column("Note", style="dim")
+
+    for ip, name in sorted(aliases.items()):
+        note = "(this pc)" if ip == local_ip else ""
+        table.add_row(ip, name, note)
+
+    console.print(table)
+    console.print(f"\n  [dim]Your IP: {local_ip} (auto-tagged as 'this pc')[/dim]")
+    console.print(f"  [dim]Aliases stored in: ~/.quietnmap/aliases.json[/dim]")
+
+
+@alias.command("clear")
+@click.confirmation_option(prompt="Remove all aliases?")
+def alias_clear() -> None:
+    """Remove all aliases."""
+    from quietnmap.aliases import clear_aliases
+    count = clear_aliases()
+    console.print(f"  [yellow]Cleared {count} alias(es)[/yellow]")
 
 
 if __name__ == "__main__":
