@@ -2,68 +2,77 @@
 
 > **This project is under active development and is not a stable release. Features may change, break, or be incomplete.**
 
-A modern, async Python network scanner — an nmap-inspired alternative built with `asyncio`, `scapy`, and `rich`.
+A modern, async Python network scanner and traffic monitor — an nmap-inspired alternative built with `asyncio`, `scapy`, and `rich`. Works as both a CLI tool and a Python library.
+
+---
 
 ## Features
 
-- **7 Scan Types** — SYN, Connect, FIN, XMAS, NULL, ACK, UDP
-- **Service Detection** — Banner grabbing and protocol identification
-- **OS Fingerprinting** — TTL analysis, TCP window size, port heuristics
-- **Stealth Options** — Inter-probe delay, port/host randomization, TTL spoofing, source port control
-- **Scan Profiles** — `quiet`, `normal`, `aggressive`, `paranoid`, `quick` presets
-- **Rich CLI** — Live dashboard with progress tracking
-- **Multiple Output Formats** — Console, JSON, HTML report
-- **Traffic Monitor** — Real-time packet sniffing with live dashboard showing who's talking to whom
-- **Protocol Analysis** — Identifies DNS lookups, HTTP requests, and 40+ protocol activities
-- **Plugin System** — Extensible via entry points or local plugin directory
-- **No Root Fallback** — Falls back to TCP connect scan when raw sockets aren't available
+| Category | What You Get |
+|----------|-------------|
+| **Port Scanning** | 7 scan types — SYN, Connect, FIN, XMAS, NULL, ACK, UDP |
+| **Service Detection** | Banner grabbing, protocol identification on open ports |
+| **OS Fingerprinting** | TTL analysis, TCP window size, port-based heuristics |
+| **Traffic Monitor** | Real-time packet sniffing — see who's talking to whom |
+| **Protocol Analysis** | Identifies DNS lookups, HTTP requests, and 40+ activities |
+| **Device Aliases** | Name IPs on your network (e.g., "Router", "Dad's Laptop") |
+| **Auto "(this pc)"** | Your machine is auto-tagged everywhere — no setup needed |
+| **Stealth Options** | Inter-probe delay, randomization, TTL spoofing, source port control |
+| **Scan Profiles** | `quick`, `normal`, `aggressive`, `quiet`, `paranoid` presets |
+| **Rich CLI** | Live dashboard with progress tracking |
+| **Output Formats** | Console, JSON, self-contained HTML report |
+| **Plugin System** | Extend via entry points or local plugin directory |
+| **No Root Fallback** | Falls back to TCP connect scan when raw sockets aren't available |
+
+---
 
 ## Installation
 
 ```bash
+git clone https://github.com/Arps-hub/Quiet-Nmap.git
+cd Quiet-Nmap
 pip install -e .
 ```
 
 **Requirements:** Python 3.11+
 
+**Dependencies:** `scapy`, `click`, `rich` (installed automatically)
+
+---
+
 ## Quick Start
 
+### Scan a target
 ```bash
-# Basic scan
-quietnmap scan 192.168.1.1
-
-# Scan specific ports
-quietnmap scan 10.0.0.0/24 -p 22,80,443
-
-# TCP connect scan (no root needed)
-quietnmap scan target.com -sT
-
-# Aggressive profile with JSON output
-quietnmap scan 192.168.1.1 --profile aggressive -oJ results.json
-
-# HTML report
-quietnmap scan 192.168.1.0/24 -p 1-1024 -oH report.html
-
-# Check if host is up
-quietnmap ping 192.168.1.1
-
-# List scan profiles
-quietnmap profiles
-
-# Name devices on your network
-quietnmap alias add 192.168.1.1 Router
-quietnmap alias add 192.168.1.50 "Dad's Laptop"
-quietnmap alias list
-
-# Monitor network traffic (requires admin/root)
-quietnmap monitor
-
-# Monitor specific interface with filter
-quietnmap monitor -i eth0 -f "tcp port 80 or udp port 53"
-
-# Monitor for 60 seconds and save to JSON
-quietnmap monitor -d 60 -oJ traffic.json
+quietnmap scan 192.168.1.1                          # Default SYN scan (needs admin)
+quietnmap scan 192.168.1.1 -sT                      # Connect scan (no admin needed)
+quietnmap scan 10.0.0.0/24 -p 22,80,443             # Scan specific ports on a subnet
+quietnmap scan 192.168.1.1 -p 1-1024 -oJ results.json -oH report.html
 ```
+
+### Name your devices
+```bash
+quietnmap alias add 192.168.1.1 Router
+quietnmap alias add 192.168.1.20 "Mom's Phone"
+quietnmap alias add 192.168.1.30 "Smart TV"
+quietnmap alias list
+```
+
+### Monitor network traffic
+```bash
+quietnmap monitor                                    # Live dashboard (needs admin)
+quietnmap monitor -i Wi-Fi -d 60                     # Specific interface, 60 seconds
+quietnmap monitor -f "udp port 53" -oJ dns.json      # Filter DNS traffic only
+```
+
+### Other commands
+```bash
+quietnmap ping 192.168.1.1                           # Check if host is up
+quietnmap profiles                                   # List scan profiles
+quietnmap alias list                                 # Show saved device names
+```
+
+---
 
 ## Scan Types
 
@@ -77,6 +86,8 @@ quietnmap monitor -d 60 -oJ traffic.json
 | `-sA` | ACK | ACK flag (firewall detection) | Yes |
 | `-sU` | UDP | UDP scan | No |
 
+---
+
 ## Scan Profiles
 
 | Profile | Concurrency | Delay | Use Case |
@@ -86,6 +97,103 @@ quietnmap monitor -d 60 -oJ traffic.json
 | `aggressive` | 2000 | 0ms | Maximum speed |
 | `quiet` | 50 | 100ms | Low footprint |
 | `paranoid` | 10 | 1000ms | IDS evasion |
+
+```bash
+quietnmap scan 192.168.1.0/24 --profile aggressive
+quietnmap scan target.com --profile paranoid -sT
+```
+
+---
+
+## Device Aliases
+
+On a big network, raw IPs are hard to read. Aliases let you name them:
+
+```bash
+# Add aliases
+quietnmap alias add 192.168.1.1 Router
+quietnmap alias add 192.168.1.20 "Mom's Phone"
+quietnmap alias add 192.168.1.30 "Smart TV"
+quietnmap alias add 192.168.1.100 "Work Laptop"
+
+# See all aliases
+quietnmap alias list
+
+# Remove one
+quietnmap alias remove 192.168.1.30
+
+# Clear all
+quietnmap alias clear
+```
+
+**Your machine is auto-tagged as `(this pc)` everywhere — no setup needed.**
+
+Aliases appear in:
+- Scan results — `192.168.1.1 (Router)` instead of just the IP
+- Traffic monitor — Device column shows `Router`, `this pc`, etc.
+- Connection table — `this pc:54321 -> Router:80`
+- DNS/HTTP logs — Shows device names
+- HTML reports — Names embedded in the report
+
+Stored in `~/.quietnmap/aliases.json`.
+
+---
+
+## Traffic Monitor
+
+Watch what devices on your network are doing in real time:
+
+```bash
+# Start monitoring (Ctrl+C to stop)
+quietnmap monitor
+
+# Monitor a specific interface
+quietnmap monitor -i Wi-Fi
+
+# Only capture DNS and HTTP traffic
+quietnmap monitor -f "udp port 53 or tcp port 80"
+
+# Run for 2 minutes and export results
+quietnmap monitor -d 120 -oJ captured.json
+
+# Text mode (no live dashboard)
+quietnmap monitor --no-dashboard -v
+```
+
+**What the dashboard shows:**
+- **Devices & Activity** — Every IP, their name/alias, traffic volume, what they're doing
+- **Active Connections** — Source, destination, protocol, data transferred
+- **Protocol Breakdown** — TCP vs UDP vs ICMP distribution with visual bars
+- **DNS Queries** — Real-time log of domain lookups (who's visiting what)
+- **HTTP Requests** — Method + host for unencrypted web traffic
+
+> Requires **admin/root** privileges for raw packet capture.
+
+---
+
+## Usage as a Python Library
+
+```python
+import asyncio
+from quietnmap.models import ScanConfig, ScanType
+from quietnmap.core.scanner import Scanner
+
+async def main():
+    config = ScanConfig(
+        targets=["192.168.1.1"],
+        ports=[22, 80, 443],
+        scan_type=ScanType.TCP_CONNECT,
+    )
+    scanner = Scanner(config)
+
+    async for host in scanner.run_stream():
+        for port in host.open_ports:
+            print(f"{host.ip}:{port.port} — {port.service.name}")
+
+asyncio.run(main())
+```
+
+---
 
 ## Project Structure
 
@@ -118,87 +226,17 @@ quiet-nmap/
 │   └── plugins/
 │       └── base.py            # Plugin system (base class & loader)
 ├── tests/
+│   ├── test_aliases.py
 │   ├── test_cli.py
 │   ├── test_models.py
+│   ├── test_monitor.py
 │   ├── test_profiles.py
 │   └── test_tcp.py
 ├── pyproject.toml
 └── .gitignore
 ```
 
-## Device Aliases
-
-Give friendly names to IPs so you can tell who's who on the network. Your machine is auto-tagged as `(this pc)`.
-
-```bash
-# Add aliases
-quietnmap alias add 192.168.1.1 Router
-quietnmap alias add 192.168.1.20 "Mom's Phone"
-quietnmap alias add 192.168.1.30 "Smart TV"
-
-# List all aliases
-quietnmap alias list
-
-# Remove one
-quietnmap alias remove 192.168.1.30
-
-# Clear all
-quietnmap alias clear
-```
-
-Aliases show up everywhere — scan results, traffic monitor, HTML reports, and JSON exports. Stored in `~/.quietnmap/aliases.json`.
-
-## Traffic Monitor
-
-The `monitor` command captures live network traffic and shows what devices on your network are doing:
-
-- **Device tracking** — See every IP, their traffic volume, and what they're up to
-- **DNS spy** — Watch domain lookups in real time (who's visiting what)
-- **HTTP logger** — Capture HTTP requests (method + host)
-- **Protocol breakdown** — TCP vs UDP vs ICMP distribution
-- **Connection tracker** — Active connections with source, destination, and data volume
-- **Live dashboard** — Full-screen Rich TUI that updates in real time
-
-```bash
-# Start monitoring (Ctrl+C to stop)
-quietnmap monitor
-
-# Monitor a specific interface
-quietnmap monitor -i Wi-Fi
-
-# Only capture DNS and HTTP traffic
-quietnmap monitor -f "udp port 53 or tcp port 80"
-
-# Run for 2 minutes and export results
-quietnmap monitor -d 120 -oJ captured.json
-
-# Text mode (no live dashboard)
-quietnmap monitor --no-dashboard -v
-```
-
-> Requires **admin/root** privileges for raw packet capture.
-
-## Usage as a Library
-
-```python
-import asyncio
-from quietnmap.models import ScanConfig, ScanType
-from quietnmap.core.scanner import Scanner
-
-async def main():
-    config = ScanConfig(
-        targets=["192.168.1.1"],
-        ports=[22, 80, 443],
-        scan_type=ScanType.TCP_CONNECT,
-    )
-    scanner = Scanner(config)
-
-    async for host in scanner.run_stream():
-        for port in host.open_ports:
-            print(f"{host.ip}:{port.port} — {port.service.name}")
-
-asyncio.run(main())
-```
+---
 
 ## Disclaimer
 
@@ -207,3 +245,7 @@ This tool is intended for **authorized security testing, educational purposes, a
 ## License
 
 MIT
+
+## Author
+
+**Ayush** — [GitHub](https://github.com/Arps-hub)
